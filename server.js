@@ -46,7 +46,7 @@ app.post('/subir-foto', upload.single('foto'), (req, res) => {
     res.status(200).send({ mensaje: 'Foto recibida con éxito en el servidor del programador.' });
 });
 
-// Ruta de la galería web para ver las imágenes desde el navegador
+// Ruta de la galería web para ver las imágenes desde el navegador sin duplicados
 app.get('/galeria', (req, res) => {
     const dir = './public/uploads';
     
@@ -59,8 +59,8 @@ app.get('/galeria', (req, res) => {
             return res.status(500).send('Error al leer las imágenes');
         }
 
-        // Filtrar solo archivos de imagen por seguridad
-        const imageFiles = files.filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file));
+        // Filtrar solo archivos de imagen y eliminar duplicados por nombre
+        const uniqueFiles = [...new Set(files.filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file)))];
 
         let html = `
             <html>
@@ -76,14 +76,14 @@ app.get('/galeria', (req, res) => {
                 </head>
                 <body>
                     <h1>Galería de Fotos Recibidas</h1>
-                    <p>Total de imágenes: ${imageFiles.length}</p>
+                    <p>Total de imágenes únicas: ${uniqueFiles.length}</p>
                     <div class="grid">
         `;
 
-        if (imageFiles.length === 0) {
+        if (uniqueFiles.length === 0) {
             html += `<p>Aún no se ha sincronizado ninguna imagen.</p>`;
         } else {
-            imageFiles.forEach(file => {
+            uniqueFiles.forEach(file => {
                 html += `
                     <div class="card">
                         <img src="/uploads/${file}" alt="Foto" />
@@ -101,6 +101,11 @@ app.get('/galeria', (req, res) => {
 
         res.send(html);
     });
+});
+
+// Iniciar servidor
+app.listen(PORT, () => {
+    console.log(`Servidor de programador corriendo en el puerto ${PORT}`);
 });
 
 // Iniciar servidor
