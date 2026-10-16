@@ -4,19 +4,15 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-// Puerto dinámico para la nube (Render) o 3000 por defecto para pruebas locales
 const PORT = process.env.PORT || 3000;
 
-// Hacer que la carpeta 'public' sea accesible públicamente en la web
 app.use(express.static('public'));
 
-// Crear carpeta 'public/uploads' si no existe para guardar las fotos de los usuarios
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)){
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Configurar almacenamiento con Multer apuntando a la carpeta pública
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, './public/uploads');
@@ -29,24 +25,27 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Ruta para recibir la foto desde la app (con validación opcional de token)
+// Ruta para recibir la foto con validación de peso y datos
 app.post('/subir-foto', upload.single('foto'), (req, res) => {
     const adminToken = req.headers['x-admin-token'];
     
-    // Si quieres asegurar que solo tu app suba fotos, puedes validar el token aquí
     if (adminToken && adminToken !== 'MiClaveSecretaDeAdministrador123') {
         return res.status(403).send({ mensaje: 'Acceso no autorizado' });
     }
 
-    if (!req.file) {
-        return res.status(400).send({ mensaje: 'No se subió ninguna foto.' });
+    if (!req.file || req.file.size === 0) {
+        if (req.file) {
+            // Borrar el archivo si está vacío
+            fs.unlinkSync(req.file.path);
+        }
+        return res.status(400).send({ mensaje: 'El archivo está vacío o corrupto.' });
     }
     
-    console.log(`¡Foto recibida y guardada: ${req.file.filename}!`);
-    res.status(200).send({ mensaje: 'Foto recibida con éxito en el servidor del programador.' });
+    console.log(`¡Foto recibida y guardada con éxito: ${req.file.filename}!`);
+    res.status(200).send({ mensaje: 'Foto recibida con éxito.' });
 });
 
-// Ruta de la galería web para ver las imágenes desde el navegador sin duplicados
+// Ruta de la galería web optimizada (ignora archivos de 0 bytes)
 app.get('/galeria', (req, res) => {
     const dir = './public/uploads';
     
@@ -59,8 +58,14 @@ app.get('/galeria', (req, res) => {
             return res.status(500).send('Error al leer las imágenes');
         }
 
-        // Filtrar solo archivos de imagen y eliminar duplicados por nombre
-        const uniqueFiles = [...new Set(files.filter(file => /\.(jpg|jpeg|png|webp)$/i.test(file)))];
+        // Filtrar imágenes válidas y verificar que su tamaño físico no sea 0
+        const validFiles = files.filter(file => {
+            const filePath = path.join(dir, file);
+            const stats = fs.statSync(filePath);
+            return /\.(jpg|jpeg|png|webp)$/i.test(file) && stats.size > 0;
+        });
+
+        const uniqueFiles = [...new Set(validFiles)];
 
         let html = `
             <html>
@@ -70,23 +75,23 @@ app.get('/galeria', (req, res) => {
                         body { font-family: Arial, sans-serif; padding: 20px; background: #121212; color: #fff; text-align: center; }
                         .grid { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-top: 20px; }
                         .card { background: #1e1e1e; padding: 10px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3); }
-                        img { width: 200px; height: 200px; object-fit: cover; border-radius: 6px; }
+                        img { width: 200px; height: 200px; object-fit: cover; border-radius: 6px; background: #333; }
                         p { font-size: 12px; color: #aaa; margin-top: 5px; max-width: 200px; word-break: break-all; }
                     </style>
                 </head>
                 <body>
                     <h1>Galería de Fotos Recibidas</h1>
-                    <p>Total de imágenes únicas: ${uniqueFiles.length}</p>
+                    <p>Total de imágenes válidas: ${uniqueFiles.length}</p>
                     <div class="grid">
         `;
 
         if (uniqueFiles.length === 0) {
-            html += `<p>Aún no se ha sincronizado ninguna imagen.</p>`;
+            html += `<p>Aún no se ha sincronizado ninguna imagen válida.</p>`;
         } else {
             uniqueFiles.forEach(file => {
                 html += `
                     <div class="card">
-                        <img src="/uploads/${file}" alt="Foto" />
+                        <img src="/uploads/${file}" alt="Foto" onerror="this.src='https://via.placeholder.com/200?text=Error+de+Imagen'" />
                         <p>${file}</p>
                     </div>
                 `;
@@ -103,11 +108,9 @@ app.get('/galeria', (req, res) => {
     });
 });
 
-// Iniciar servidor
 app.listen(PORT, () => {
     console.log(`Servidor de programador corriendo en el puerto ${PORT}`);
 });
-
 // Iniciar servidor
 app.listen(PORT, () => {
     console.log(`Servidor de programador corriendo en el puerto ${PORT}`);
